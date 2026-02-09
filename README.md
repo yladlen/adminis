@@ -49,5 +49,5 @@ adminis/
 
 ## 📌 Поддержка
 
-Разработчик: [@bl1ppi](https://github.com/bl1ppi)  
+Разработчик: [@yladlen](https://github.com/yladlen)  
 Лицензия: GPL 3.0
