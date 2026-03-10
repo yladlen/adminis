@@ -14,7 +14,7 @@ function collectServerStats(array $server): array {
     $stats = ['status' => 'online'];
 
     // CPU: top
-    $cpuOutput = $ssh->exec("top -bn1 | grep 'Cpu(s)'");
+    $cpuOutput = $ssh->exec("LC_ALL=C top -bn1 | grep 'Cpu(s)'");
     if (preg_match('/(\d+\.\d+)\s*id/', $cpuOutput, $matches)) {
         $cpuUsage = 100 - (float)$matches[1];
         $stats['cpu'] = [
@@ -26,14 +26,28 @@ function collectServerStats(array $server): array {
     }
 
     // RAM: free -m
-    $memOutput = $ssh->exec("free -m | grep Mem:");
-    $memParts = preg_split('/\s+/', trim($memOutput));
-    if (count($memParts) >= 3) {
-        $stats['memory'] = [
-            'used' => (int)$memParts[2],
-            'total' => (int)$memParts[1],
-        ];
-    }
+    //$memOutput = $ssh->exec("LF_ALL=C free -m | grep Mem:");
+    //$memParts = preg_split('/\s+/', trim($memOutput));
+    //if (count($memParts) >= 3) {
+    //    $stats['memory'] = [
+    //        'used' => (int)$memParts[2],
+    //        'total' => (int)$memParts[1],
+    //    ];
+    //}
+
+	// RAM: free -m
+	$memInfo = $ssh->exec("cat /proc/meminfo | grep -E 'MemTotal|MemAvailable'");
+	preg_match('/MemTotal:\s+(\d+)\s+kB/', $memInfo, $totalMatches);
+	preg_match('/MemAvailable:\s+(\d+)\s+kB/', $memInfo, $availMatches);
+	
+	if ($totalMatches && $availMatches) {
+	    $totalMem = (int)($totalMatches[1] / 1024); // kB → MB
+	    $usedMem = $totalMem - (int)($availMatches[1] / 1024);
+	    $stats['memory'] = [
+	        'used' => $usedMem,
+	        'total' => $totalMem,
+	    ];
+	}
 
     // Диски
     $dfOutput = $ssh->exec("df -BG --output=source,size,used,avail,target -x tmpfs -x devtmpfs | tail -n +2");

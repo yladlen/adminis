@@ -47,3 +47,7 @@ adminis/
 - Логин/пароль администратора задаётся при установке
 - Хранится в `includes/config.php`
 
+## 📌 Поддержка
+
+Разработчик: [@yladlen](https://github.com/yladlen)  
+Лицензия: GPL 3.0
