@@ -5,7 +5,7 @@ error_reporting(E_ALL);
 
 session_start();
 
-$configFile = __DIR__ . '/../includes/config.php';
+$configFile   = __DIR__ . '/../includes/config.php';
 $installedFlag = __DIR__ . '/.installed';
 
 if (file_exists($configFile)) {
@@ -13,429 +13,557 @@ if (file_exists($configFile)) {
     exit;
 }
 
-// Проверка базовых требований
+// Проверка требований
 $requirements = [
-    'PHP >= 7.4' => version_compare(PHP_VERSION, '7.4.0', '>='),
-    'Расширение PDO' => extension_loaded('pdo'),
-    'Расширение mbstring' => extension_loaded('mbstring'),
-    'Расширение openssl' => extension_loaded('openssl'),
-    'Расширение json' => extension_loaded('json'),
-    'Права на запись в config.php' => is_writable(__DIR__ . '/../includes/') || !file_exists(__DIR__ . '/../includes/config.php'),
+    'PHP >= 7.4'                => version_compare(PHP_VERSION, '7.4.0', '>='),
+    'Расширение PDO'            => extension_loaded('pdo'),
+    'Расширение PDO MySQL'      => extension_loaded('pdo_mysql'),
+    'Расширение mbstring'       => extension_loaded('mbstring'),
+    'Расширение openssl'        => extension_loaded('openssl'),
+    'Расширение json'           => extension_loaded('json'),
+    'Права на запись в includes/' => is_writable(__DIR__ . '/../includes/'),
 ];
-
-// Проверка доступных PDO-драйверов
-$availableDrivers = PDO::getAvailableDrivers();
-$supportedDrivers = ['mysql', 'pgsql', 'sqlite'];
-$driverCheck = array_intersect($supportedDrivers, $availableDrivers);
-$requirements['Поддерживаемый драйвер PDO (MySQL, PostgreSQL, SQLite)'] = !empty($driverCheck);
-
 $all_ok = !in_array(false, $requirements, true);
 
-$error = '';
-$success = false;
-
-$availableDrivers = PDO::getAvailableDrivers();
-$supported = [
-    'mysql' => in_array('mysql', $availableDrivers),
-    'pgsql' => in_array('pgsql', $availableDrivers),
-    'sqlite' => in_array('sqlite', $availableDrivers),
-];
+$error       = '';
+$success     = false;
+$manualConfig = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $dbType = $_POST['db_type'];
+    $host      = trim($_POST['host']       ?? 'localhost');
+    $dbname    = trim($_POST['dbname']     ?? '');
+    $user      = trim($_POST['user']       ?? '');
+    $pass      = $_POST['pass']            ?? '';
+    $adminUser = trim($_POST['admin_user'] ?? '');
+    $adminPass = trim($_POST['admin_pass'] ?? '');
+    $siteTitle = trim($_POST['site_title'] ?? 'Adminis');
+    $appVersion = '2.0.0';
 
-    if (empty($supported[$dbType])) {
-        $error = "PDO-драйвер для '$dbType' не установлен на сервере.";
+    if (empty($dbname) || empty($adminUser) || empty($adminPass)) {
+        $error = "Заполните все обязательные поля.";
     } else {
-        $host = $_POST['host'] ?? '';
-        $dbname = $_POST['dbname'] ?? '';
-        $user = $_POST['user'] ?? '';
-        $pass = $_POST['pass'] ?? '';
-        $adminUser = $_POST['admin_user'] ?? '';
-        $adminPass = $_POST['admin_pass'] ?? '';
-        $siteTitle = $_POST['site_title'] ?? '📡 Учёт и визуализация сети';
-
         try {
-            // DSN и проверка существования базы
-            if ($dbType === 'sqlite') {
-                $dbPath = __DIR__ . "/../data/$dbname.sqlite";
-                if (!is_file($dbPath)) {
-                    if (!is_dir(dirname($dbPath))) mkdir(dirname($dbPath), 0777, true);
-                    touch($dbPath);
-                }
-                $dsn = "sqlite:$dbPath";
-                $pdo = new PDO($dsn);
-            } else {
-                if (empty($host) || empty($dbname)) throw new Exception("Укажите хост и имя базы данных");
-                $dsn = $dbType === 'mysql'
-                    ? "mysql:host=$host;dbname=$dbname;charset=utf8mb4"
-                    : "pgsql:host=$host;dbname=$dbname";
-                $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-            }
+            $dsn = "mysql:host=$host;dbname=$dbname;charset=utf8mb4";
+            $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 
-            $tables = [
-                'rooms' => match ($dbType) {
-                 	'mysql' => "CREATE TABLE IF NOT EXISTS rooms (
-                            id INT AUTO_INCREMENT PRIMARY KEY,
-                            name VARCHAR(50) NOT NULL,
-                            description TEXT
-                        )",
-                    'pgsql' => "CREATE TABLE IF NOT EXISTS rooms (
-                        id SERIAL PRIMARY KEY,
-                        name VARCHAR(50) NOT NULL,
-                        description TEXT
-                    )",
-                    'sqlite' => "CREATE TABLE IF NOT EXISTS rooms (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name TEXT NOT NULL,
-                        description TEXT
-                    )",
-                },
-                'devices' => match ($dbType) {
-                    'mysql' => "CREATE TABLE IF NOT EXISTS devices (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        room_id INT NOT NULL,
-                        name VARCHAR(100) NOT NULL,
-                        type ENUM('ПК','Сервер','Принтер','Маршрутизатор','Свитч','МФУ','Интерактивная доска','Прочее') NOT NULL,
-                        ip VARCHAR(15),
-                        mac VARCHAR(17),
-                        inventory_number VARCHAR(50),
-                        status ENUM('В работе','На ремонте','Списан','На хранении','Числится за кабинетом') NOT NULL,
-                        comment TEXT,
-                        icon VARCHAR(255),
-                        FOREIGN KEY (room_id) REFERENCES rooms(id)
-                    )",
-                    'pgsql' => "CREATE TABLE IF NOT EXISTS devices (
-                        id SERIAL PRIMARY KEY,
-                        room_id INT NOT NULL REFERENCES rooms(id),
-                        name VARCHAR(100) NOT NULL,
-                        type VARCHAR(50) NOT NULL CHECK (type IN ('ПК','Сервер','Принтер','Маршрутизатор','Свитч','МФУ','Интерактивная доска','Прочее')),
-                        ip VARCHAR(15),
-                        mac VARCHAR(17),
-                        inventory_number VARCHAR(50),
-                        status VARCHAR(50) NOT NULL CHECK (status IN ('В работе','На ремонте','Списан','На хранении','Числится за кабинетом')),
-                        comment TEXT,
-                        icon VARCHAR(255)
-                    )",
-                    'sqlite' => "CREATE TABLE IF NOT EXISTS devices (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        room_id INTEGER NOT NULL,
-                        name TEXT NOT NULL,
-                        type TEXT NOT NULL,
-                        ip TEXT,
-                        mac TEXT,
-                        inventory_number TEXT,
-                        status TEXT NOT NULL,
-                        comment TEXT,
-                        icon TEXT,
-                        FOREIGN KEY (room_id) REFERENCES rooms(id)
-                    )",
-                },
-                'switch_links' => match ($dbType) {
-                    'mysql' => "CREATE TABLE IF NOT EXISTS switch_links (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        device_id INT NOT NULL,
-                        connected_to_device_id INT NOT NULL,
-                        FOREIGN KEY (device_id) REFERENCES devices(id),
-                        FOREIGN KEY (connected_to_device_id) REFERENCES devices(id)
-                    )",
-                	'pgsql' => "CREATE TABLE IF NOT EXISTS switch_links (
-                	    id SERIAL PRIMARY KEY,
-                	    device_id INT NOT NULL REFERENCES devices(id),
-                	    connected_to_device_id INT NOT NULL REFERENCES devices(id)
-                	)",
-                	'sqlite' => "CREATE TABLE IF NOT EXISTS switch_links (
-                	    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                	    device_id INTEGER NOT NULL,
-                	    connected_to_device_id INTEGER NOT NULL,
-                	    FOREIGN KEY (device_id) REFERENCES devices(id),
-                	    FOREIGN KEY (connected_to_device_id) REFERENCES devices(id)
-                	)",
-                },
-                'teachers' => match ($dbType) {
-                    'mysql' => "CREATE TABLE IF NOT EXISTS teachers (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        full_name VARCHAR(255) NOT NULL
-                    )",
-                    'pgsql' => "CREATE TABLE IF NOT EXISTS teachers (
-                        id SERIAL PRIMARY KEY,
-                        full_name VARCHAR(255) NOT NULL
-                    )",
-                    'sqlite' => "CREATE TABLE IF NOT EXISTS teachers (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        full_name TEXT NOT NULL
-                    )",
-                },
-                'laptops' => match ($dbType) {
-                    'mysql' => "CREATE TABLE IF NOT EXISTS laptops (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        number INT NOT NULL,
-                        teacher_id INT NOT NULL,
-                        room_id INT,
-                        start_date DATE,
-                        end_date DATE,
-                        status ENUM('взят','сдан') DEFAULT 'взят',
-                        comment TEXT,
-                        is_permanent TINYINT(1) DEFAULT 0,
-                        FOREIGN KEY (teacher_id) REFERENCES teachers(id),
-                        FOREIGN KEY (room_id) REFERENCES rooms(id)
-                    )",
-                    'pgsql' => "CREATE TABLE IF NOT EXISTS laptops (
-                        id SERIAL PRIMARY KEY,
-                        number INT NOT NULL,
-                        teacher_id INT NOT NULL REFERENCES teachers(id),
-                        room_id INT REFERENCES rooms(id),
-                        start_date DATE,
-                        end_date DATE,
-                        status VARCHAR(10) DEFAULT 'взят' CHECK (status IN ('взят','сдан')),
-                        comment TEXT,
-                        is_permanent BOOLEAN DEFAULT FALSE
-                    )",
-                    'sqlite' => "CREATE TABLE IF NOT EXISTS laptops (
-					    id INTEGER PRIMARY KEY AUTOINCREMENT,
-					    number INTEGER NOT NULL,
-					    teacher_id INTEGER NOT NULL,
-					    room_id INTEGER,
-					    start_date TEXT,
-					    end_date TEXT,
-					    status TEXT DEFAULT 'взят',
-					    comment TEXT,
-					    is_permanent INTEGER DEFAULT 0,
-					    FOREIGN KEY (teacher_id) REFERENCES teachers(id),
-					    FOREIGN KEY (room_id) REFERENCES rooms(id)
-					)",
-                },
-                'documentation' => match ($dbType) {
-                    'mysql' => "CREATE TABLE IF NOT EXISTS documentation (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        title VARCHAR(255) NOT NULL,
-                        content TEXT NOT NULL,
-                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                    )",
-                    'pgsql' => "CREATE TABLE IF NOT EXISTS documentation (
-                        id SERIAL PRIMARY KEY,
-                        title VARCHAR(255) NOT NULL,
-                        content TEXT NOT NULL,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )",
-                    'sqlite' => "CREATE TABLE IF NOT EXISTS documentation (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        title TEXT NOT NULL,
-                        content TEXT NOT NULL,
-                        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                    )",
-                },
-                'servers' => match ($dbType) {
-                    'mysql' => "CREATE TABLE IF NOT EXISTS servers (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        name VARCHAR(100) NOT NULL,
-                        ip VARCHAR(45) NOT NULL,
-                        user VARCHAR(50) NOT NULL DEFAULT 'monitor',
-                        services TEXT,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                    )",
-                    'pgsql' => "CREATE TABLE IF NOT EXISTS servers (
-                        id SERIAL PRIMARY KEY,
-                        name VARCHAR(100) NOT NULL,
-                        ip VARCHAR(45) NOT NULL,
-                        user VARCHAR(50) NOT NULL DEFAULT 'monitor',
-                        services TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )",
-                    'sqlite' => "CREATE TABLE IF NOT EXISTS servers (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name TEXT NOT NULL,
-                        ip TEXT NOT NULL,
-                        user TEXT NOT NULL DEFAULT 'monitor',
-                        services TEXT,
-                        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                    )",
-                },
-                'server_stats' => match ($dbType) {
-                    'mysql' => "CREATE TABLE IF NOT EXISTS server_stats (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        server_id INT NOT NULL,
-                        cpu_used FLOAT NOT NULL,
-                        mem_used INT NOT NULL,
-                        mem_total INT NOT NULL,
-                        disk TEXT,
-                        services TEXT,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
-                    )",
-                    'pgsql' => "CREATE TABLE IF NOT EXISTS server_stats (
-                        id SERIAL PRIMARY KEY,
-                        server_id INT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
-                        cpu_used REAL NOT NULL,
-                        mem_used INT NOT NULL,
-                        mem_total INT NOT NULL,
-                        disk TEXT,
-                        services TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )",
-                    'sqlite' => "CREATE TABLE IF NOT EXISTS server_stats (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        server_id INTEGER NOT NULL,
-                        cpu_used REAL NOT NULL,
-                        mem_used INTEGER NOT NULL,
-                        mem_total INTEGER NOT NULL,
-                        disk TEXT,
-                        services TEXT,
-                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
-                    )",
-                },
-            ];
+            // ── Создание таблиц в правильном порядке (с учётом FK) ──────────────
 
-            foreach ($tables as $sql) $pdo->exec($sql);
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `rooms` (
+                `id`          INT AUTO_INCREMENT PRIMARY KEY,
+                `name`        VARCHAR(50)  NOT NULL,
+                `description` TEXT         DEFAULT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-            // Сохраняем конфиг
-			$configData = <<<PHP
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `devices` (
+                `id`               INT AUTO_INCREMENT PRIMARY KEY,
+                `room_id`          INT NOT NULL,
+                `name`             VARCHAR(100) NOT NULL,
+                `type`             ENUM('ПК','Сервер','Принтер','Маршрутизатор','Свитч','МФУ','Интерактивная доска','Ноутбук','Прочее') NOT NULL,
+                `ip`               VARCHAR(15)  DEFAULT NULL,
+                `mac`              VARCHAR(17)  DEFAULT NULL,
+                `inventory_number` VARCHAR(50)  DEFAULT NULL,
+                `status`           ENUM('В работе','На ремонте','Списан','На хранении','Числится за кабинетом') NOT NULL,
+                `comment`          TEXT         DEFAULT NULL,
+                `icon`             VARCHAR(255) DEFAULT NULL,
+                KEY `room_id` (`room_id`),
+                CONSTRAINT `devices_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `switch_links` (
+                `id`                    INT AUTO_INCREMENT PRIMARY KEY,
+                `device_id`             INT NOT NULL,
+                `connected_to_device_id` INT NOT NULL,
+                KEY `device_id` (`device_id`),
+                KEY `connected_to_device_id` (`connected_to_device_id`),
+                CONSTRAINT `switch_links_ibfk_1` FOREIGN KEY (`device_id`)             REFERENCES `devices` (`id`),
+                CONSTRAINT `switch_links_ibfk_2` FOREIGN KEY (`connected_to_device_id`) REFERENCES `devices` (`id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `employees` (
+                `id`             INT AUTO_INCREMENT PRIMARY KEY,
+                `full_name`      VARCHAR(255) NOT NULL,
+                `internal_phone` VARCHAR(20)  DEFAULT NULL COMMENT 'Внутренний телефон',
+                `mobile_phone`   VARCHAR(20)  DEFAULT NULL COMMENT 'Мобильный телефон',
+                `room_id`        INT          DEFAULT NULL COMMENT 'Кабинет',
+                `position`       VARCHAR(255) DEFAULT NULL COMMENT 'Должность',
+                `email`          VARCHAR(255) DEFAULT NULL COMMENT 'Email',
+                `comment`        TEXT         DEFAULT NULL COMMENT 'Комментарий',
+                KEY `room_id` (`room_id`),
+                CONSTRAINT `employees_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `journal` (
+                `id`           INT AUTO_INCREMENT PRIMARY KEY,
+                `device_id`    INT NOT NULL,
+                `employee_id`  INT NOT NULL,
+                `is_permanent` TINYINT(1)   NOT NULL DEFAULT 0,
+                `start_date`   DATE         DEFAULT NULL,
+                `end_date`     DATE         DEFAULT NULL,
+                `status`       ENUM('взят','сдан') NOT NULL DEFAULT 'взят',
+                `comment`      TEXT         DEFAULT NULL,
+                `created_at`   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                KEY `device_id`   (`device_id`),
+                KEY `employee_id` (`employee_id`),
+                CONSTRAINT `journal_ibfk_1` FOREIGN KEY (`device_id`)   REFERENCES `devices`   (`id`),
+                CONSTRAINT `journal_ibfk_2` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `servers` (
+                `id`         INT AUTO_INCREMENT PRIMARY KEY,
+                `name`       VARCHAR(100) NOT NULL,
+                `ip`         VARCHAR(45)  NOT NULL,
+                `user`       VARCHAR(50)  NOT NULL DEFAULT 'root',
+                `services`   TEXT         DEFAULT NULL,
+                `created_at` DATETIME     DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `server_stats` (
+                `id`         INT AUTO_INCREMENT PRIMARY KEY,
+                `server_id`  INT   NOT NULL,
+                `cpu_used`   FLOAT NOT NULL,
+                `mem_used`   INT   NOT NULL,
+                `mem_total`  INT   NOT NULL,
+                `disk`       TEXT  DEFAULT NULL,
+                `services`   TEXT  DEFAULT NULL,
+                `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT `server_stats_ibfk_1` FOREIGN KEY (`server_id`) REFERENCES `servers` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `server_visits` (
+                `id`             INT AUTO_INCREMENT PRIMARY KEY,
+                `room_id`        INT       NOT NULL,
+                `visited_at`     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `check_servers`  TINYINT(1) NOT NULL DEFAULT 1,
+                `check_ups`      TINYINT(1) NOT NULL DEFAULT 1,
+                `check_switches` TINYINT(1) NOT NULL DEFAULT 1,
+                `check_temp`     TINYINT(1) NOT NULL DEFAULT 1,
+                `check_cooling`  TINYINT(1) NOT NULL DEFAULT 1,
+                `check_power`    TINYINT(1) NOT NULL DEFAULT 1,
+                `check_access`   TINYINT(1) NOT NULL DEFAULT 1,
+                `comment`        TEXT      DEFAULT NULL,
+                KEY `room_id` (`room_id`),
+                CONSTRAINT `server_visits_ibfk_1` FOREIGN KEY (`room_id`) REFERENCES `rooms` (`id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `server_visit_issues` (
+                `id`                INT AUTO_INCREMENT PRIMARY KEY,
+                `device_name`       VARCHAR(255) NOT NULL,
+                `problem`           TEXT         NOT NULL,
+                `notified`          VARCHAR(255) DEFAULT NULL,
+                `reported_at`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `resolved_at`       TIMESTAMP    NULL     DEFAULT NULL,
+                `resolved_visit_id` INT          DEFAULT NULL,
+                KEY `resolved_visit_id` (`resolved_visit_id`),
+                CONSTRAINT `server_visit_issues_ibfk_1` FOREIGN KEY (`resolved_visit_id`) REFERENCES `server_visits` (`id`) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `server_visit_issue_links` (
+                `visit_id` INT NOT NULL,
+                `issue_id` INT NOT NULL,
+                PRIMARY KEY (`visit_id`, `issue_id`),
+                KEY `issue_id` (`issue_id`),
+                CONSTRAINT `server_visit_issue_links_ibfk_1` FOREIGN KEY (`visit_id`) REFERENCES `server_visits`       (`id`) ON DELETE CASCADE,
+                CONSTRAINT `server_visit_issue_links_ibfk_2` FOREIGN KEY (`issue_id`) REFERENCES `server_visit_issues` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `documentation` (
+                `id`          INT AUTO_INCREMENT PRIMARY KEY,
+                `title`       VARCHAR(255) NOT NULL,
+                `content`     TEXT         NOT NULL,
+                `updated_at`  DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                `parent_id`   INT          DEFAULT NULL,
+                `order_index` INT          DEFAULT 0,
+                `type`        ENUM('section','content') DEFAULT 'content',
+                `description` TEXT         DEFAULT NULL,
+                `created_at`  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                KEY `idx_docs_parent` (`parent_id`),
+                KEY `idx_docs_type`   (`type`),
+                KEY `idx_docs_order`  (`order_index`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("CREATE OR REPLACE VIEW `documentation_hierarchy` AS
+                SELECT
+                    d.id, d.title, d.content, d.parent_id,
+                    d.type, d.order_index, d.description,
+                    COUNT(p.id) AS level
+                FROM documentation d
+                LEFT JOIN documentation p ON d.parent_id = p.id
+                GROUP BY d.id
+                ORDER BY d.order_index");
+
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `computer_hardware` (
+                `device_id`  INT          PRIMARY KEY,
+                `cpu`        VARCHAR(255) DEFAULT NULL,
+                `ram_gb`     VARCHAR(64)  DEFAULT NULL,
+                `hdd_gb`     VARCHAR(64)  DEFAULT NULL,
+                `gpu`        VARCHAR(255) DEFAULT NULL,
+                `os`         VARCHAR(255) DEFAULT NULL,
+                `updated_at` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                CONSTRAINT `computer_hardware_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `computer_components` (
+                `device_id`   INT PRIMARY KEY,
+                `fan`         ENUM('ok','problem','unknown') DEFAULT 'unknown',
+                `hdd`         ENUM('ok','problem','unknown') DEFAULT 'unknown',
+                `psu`         ENUM('ok','problem','unknown') DEFAULT 'unknown',
+                `ram`         ENUM('ok','problem','unknown') DEFAULT 'unknown',
+                `motherboard` ENUM('ok','problem','unknown') DEFAULT 'unknown',
+                `maintenance` ENUM('ok','problem','unknown') DEFAULT 'unknown',
+                `os_errors`   ENUM('ok','problem','unknown') DEFAULT 'unknown',
+                `sw_errors`   ENUM('ok','problem','unknown') DEFAULT 'unknown',
+                `other`       ENUM('ok','problem','unknown') DEFAULT 'unknown',
+                `updated_at`  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                CONSTRAINT `computer_components_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `computer_issues` (
+                `id`          INT AUTO_INCREMENT PRIMARY KEY,
+                `device_id`   INT  NOT NULL,
+                `component`   VARCHAR(64) DEFAULT NULL,
+                `description` TEXT NOT NULL,
+                `reported_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `resolved_at` TIMESTAMP   NULL     DEFAULT NULL,
+                `resolution`  TEXT        DEFAULT NULL,
+                KEY `device_id` (`device_id`),
+                CONSTRAINT `computer_issues_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `computer_history` (
+                `id`         INT AUTO_INCREMENT PRIMARY KEY,
+                `device_id`  INT         NOT NULL,
+                `action`     VARCHAR(64) NOT NULL,
+                `field_name` VARCHAR(64) DEFAULT NULL,
+                `old_value`  TEXT        DEFAULT NULL,
+                `new_value`  TEXT        DEFAULT NULL,
+                `note`       TEXT        DEFAULT NULL,
+                `created_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                KEY `device_id` (`device_id`),
+                CONSTRAINT `computer_history_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+            // ── Сохраняем config.php ─────────────────────────────────────────────
+            $configData = <<<PHP
 <?php
-define('DB_TYPE', '$dbType');
-define('DB_DSN', '$dsn');
-define('DB_USER', '$user');
-define('DB_PASS', '$pass');
-define('ADMIN_LOGIN', '$adminUser');
+define('DB_TYPE',        'mysql');
+define('DB_DSN',         '$dsn');
+define('DB_USER',        '$user');
+define('DB_PASS',        '$pass');
+define('ADMIN_LOGIN',    '$adminUser');
 define('ADMIN_PASSWORD', '$adminPass');
-define('SITE_TITLE', '$siteTitle');
-define('APP_VERSION', require __DIR__ . '/version.php');
+define('SITE_TITLE',     '$siteTitle');
+define('APP_VERSION',    '$appVersion');
 PHP;
-            $configSaved = @file_put_contents($configFile, $configData);
-
-            if ($configSaved !== false) {
+            $saved = @file_put_contents($configFile, $configData);
+            if ($saved !== false) {
                 file_put_contents($installedFlag, 'installed');
                 $success = true;
             } else {
                 $manualConfig = htmlspecialchars($configData);
-                $error = "⚠️ Не удалось создать файл includes/config.php; Создайте его вручную и вставьте следующий код:";
+                $error = "Не удалось записать includes/config.php — создайте файл вручную:";
             }
 
         } catch (Exception $e) {
-            $error = "Ошибка: " . $e->getMessage();
+            $error = "Ошибка подключения: " . $e->getMessage();
         }
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <title>Установка Adminis</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <script>
-    function toggleDbFields() {
-      const dbType = document.querySelector('[name="db_type"]').value;
-      const isSQLite = dbType === 'sqlite';
-      ['host', 'user', 'pass'].forEach(id => {
-        document.getElementById(id).disabled = isSQLite;
-        document.getElementById(id).closest('.mb-3').style.display = isSQLite ? 'none' : 'block';
-      });
-    }
-    window.addEventListener('DOMContentLoaded', toggleDbFields);
-  </script>
+<meta charset="UTF-8">
+<title>Установка Adminis</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: Inter, system-ui, sans-serif;
+    background: #f0f2f5;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 16px;
+    color: #1e2130;
+}
+
+.setup-card {
+    background: #fff;
+    border: 1px solid #e5e7ef;
+    border-radius: 14px;
+    box-shadow: 0 4px 24px rgba(0,0,0,.07);
+    width: 100%;
+    max-width: 620px;
+    overflow: hidden;
+}
+
+.setup-header {
+    background: #1e2130;
+    padding: 28px 32px;
+    text-align: center;
+}
+.setup-header h1 {
+    color: #fff;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: .3px;
+}
+.setup-header p {
+    color: #9ca3c4;
+    font-size: 13px;
+    margin-top: 6px;
+}
+
+.setup-body { padding: 28px 32px; }
+
+/* Секции */
+.section {
+    margin-bottom: 28px;
+}
+.section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .7px;
+    color: #9ca3c4;
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #f0f2f5;
+}
+
+/* Требования */
+.req-table { width: 100%; border-collapse: collapse; }
+.req-table td {
+    padding: 7px 0;
+    font-size: 13px;
+    border-bottom: 1px solid #f5f6fa;
+}
+.req-table td:last-child { text-align: right; width: 32px; }
+.req-ok   { color: #16a34a; font-size: 16px; }
+.req-fail { color: #dc2626; font-size: 16px; }
+
+/* Форма */
+.form-group { margin-bottom: 14px; }
+.form-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7499;
+    margin-bottom: 5px;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+}
+.form-control {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid #d1d5e8;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #1e2130;
+    background: #fff;
+    transition: border-color .15s, box-shadow .15s;
+    outline: none;
+}
+.form-control:focus {
+    border-color: #4f6ef7;
+    box-shadow: 0 0 0 3px rgba(79,110,247,.12);
+}
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.form-hint {
+    font-size: 11px;
+    color: #9ca3c4;
+    margin-top: 4px;
+}
+
+/* Алерты */
+.alert {
+    padding: 12px 16px;
+    border-radius: 9px;
+    font-size: 13px;
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+.alert-danger  { background: #fff0f0; border: 1px solid #fca5a5; color: #b91c1c; }
+.alert-success { background: #f0fdf4; border: 1px solid #86efac; color: #15803d; text-align: center; }
+
+pre.manual-config {
+    background: #f8f9fd;
+    border: 1px solid #e5e7ef;
+    border-radius: 8px;
+    padding: 14px;
+    font-size: 12px;
+    overflow-x: auto;
+    margin-top: 10px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* Кнопка */
+.btn-submit {
+    width: 100%;
+    padding: 12px;
+    background: #4f6ef7;
+    color: #fff;
+    border: none;
+    border-radius: 9px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, transform .1s;
+    margin-top: 4px;
+}
+.btn-submit:hover  { background: #3d5ce5; }
+.btn-submit:active { transform: scale(.99); }
+
+.btn-link {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 10px 24px;
+    background: #f0f2f5;
+    color: #4f6ef7;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background .15s;
+}
+.btn-link:hover { background: #e5e7ef; }
+
+.warning-banner {
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 9px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #92400e;
+    margin-bottom: 20px;
+}
+</style>
 </head>
 <body>
-  <div class="container py-5" style="max-width: 720px;">
-    <div class="text-center mb-4">
-      <h1 class="h3">🚀 Установка платформы Adminis</h1>
-      <p class="text-muted">Добро пожаловать в мастер установки</p>
+<div class="setup-card">
+
+    <div class="setup-header">
+        <h1>🚀 Установка Adminis</h1>
+        <p>Мастер первоначальной настройки</p>
     </div>
 
-    <form method="post" action="">
-      <div class="mb-4">
-        <h4 class="text-center">✅ Проверка окружения</h4>
-        <table class="table table-bordered table-sm">
-          <thead>
-            <tr>
-              <th>Компонент</th>
-              <th>Статус</th>
-            </tr>
-          </thead>
-          <tbody>
-            <?php foreach ($requirements as $check => $result): ?>
-              <tr>
-                <td><?= htmlspecialchars($check) ?></td>
-                <td><?= $result ? '✅' : '❌' ?></td>
-              </tr>
-            <?php endforeach; ?>
-          </tbody>
-        </table>
-      </div>
+    <div class="setup-body">
 
-      <div class="mb-4">
-        <h4 class="text-center">⚙️ Настройки базы данных</h4>
-        <div class="mb-3">
-          <label class="form-label">Тип БД</label>
-          <select name="db_type" class="form-select" onchange="toggleDbFields()">
-            <?php foreach ($supported as $type => $available): ?>
-              <option value="<?= $type ?>" <?= $available ? '' : 'disabled' ?>>
-                <?= strtoupper($type) ?> <?= $available ? '' : '(недоступно)' ?>
-              </option>
-            <?php endforeach; ?>
-          </select>
+        <?php if (!$all_ok): ?>
+        <div class="warning-banner">
+            ⚠️ Не все требования выполнены. Установка может завершиться с ошибкой.
         </div>
-
-        <div class="mb-3">
-          <label class="form-label">Хост</label>
-          <input type="text" class="form-control" name="host" id="host" placeholder="localhost">
-        </div>
-
-        <div class="mb-3">
-          <label class="form-label">Имя базы данных / файл</label>
-          <input type="text" class="form-control" name="dbname" required>
-        </div>
-
-        <div class="mb-3">
-          <label class="form-label">Пользователь</label>
-          <input type="text" class="form-control" name="user" id="user">
-        </div>
-
-        <div class="mb-3">
-          <label class="form-label">Пароль</label>
-          <input type="password" class="form-control" name="pass" id="pass">
-        </div>
-
-        <div class="mb-3">
-          <label class="form-label">Заголовок сайта</label>
-          <input type="text" class="form-control" name="site_title" value="📡 Учёт и визуализация сети" required>
-        </div>
-      </div>
-
-      <div class="mb-4">
-        <h4 class="text-center">🔐 Данные администратора</h4>
-        <div class="mb-3">
-          <label class="form-label">Логин</label>
-          <input type="text" class="form-control" name="admin_user" required>
-        </div>
-
-        <div class="mb-3">
-          <label class="form-label">Пароль</label>
-          <input type="password" class="form-control" name="admin_pass" required>
-        </div>
-      </div>
-
-      <?php if (!empty($error)): ?>
-        <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
-        <?php if (isset($manualConfig)): ?>
-          <pre class="bg-light p-3 border rounded"><?= $manualConfig ?></pre>
         <?php endif; ?>
-      <?php endif; ?>
 
-      <?php if ($success): ?>
-        <div class="alert alert-success text-center">
-          ✅ Установка завершена!
-          <div class="mt-3">
-            <a href="../index.php" class="btn btn-outline-success">Перейти к сайту</a>
-          </div>
+        <!-- Проверка окружения -->
+        <div class="section">
+            <div class="section-title">Проверка окружения</div>
+            <table class="req-table">
+                <?php foreach ($requirements as $label => $ok): ?>
+                <tr>
+                    <td><?= htmlspecialchars($label) ?></td>
+                    <td><?= $ok ? '<span class="req-ok">✓</span>' : '<span class="req-fail">✗</span>' ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </table>
         </div>
-      <?php else: ?>
-        <div class="d-grid gap-2">
-          <button type="submit" class="btn btn-primary">Установить Adminis</button>
-        </div>
-      <?php endif; ?>
-    </form>
-  </div>
+
+        <?php if ($success): ?>
+
+            <div class="alert alert-success">
+                ✅ Установка завершена успешно!<br>
+                Все таблицы созданы, конфигурация сохранена.<br><br>
+                <a href="../index.php" class="btn-link">Перейти к сайту →</a>
+            </div>
+
+        <?php else: ?>
+
+        <form method="post" action="">
+
+            <!-- БД -->
+            <div class="section">
+                <div class="section-title">База данных (MySQL / MariaDB)</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Хост</label>
+                        <input type="text" class="form-control" name="host"
+                               value="<?= htmlspecialchars($_POST['host'] ?? 'localhost') ?>"
+                               placeholder="localhost">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Имя базы данных <span style="color:#dc2626">*</span></label>
+                        <input type="text" class="form-control" name="dbname" required
+                               value="<?= htmlspecialchars($_POST['dbname'] ?? '') ?>"
+                               placeholder="adminis_db">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Пользователь</label>
+                        <input type="text" class="form-control" name="user"
+                               value="<?= htmlspecialchars($_POST['user'] ?? '') ?>"
+                               placeholder="root">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Пароль</label>
+                        <input type="password" class="form-control" name="pass"
+                               value="<?= htmlspecialchars($_POST['pass'] ?? '') ?>">
+                    </div>
+                </div>
+                <div class="form-hint">База данных должна быть создана заранее. Пользователь должен иметь права CREATE TABLE.</div>
+            </div>
+
+            <!-- Сайт -->
+            <div class="section">
+                <div class="section-title">Настройки сайта</div>
+                <div class="form-group">
+                    <label class="form-label">Название системы</label>
+                    <input type="text" class="form-control" name="site_title"
+                           value="<?= htmlspecialchars($_POST['site_title'] ?? 'Adminis') ?>"
+                           placeholder="Adminis" required>
+                </div>
+            </div>
+
+            <!-- Администратор -->
+            <div class="section">
+                <div class="section-title">Учётная запись администратора</div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Логин <span style="color:#dc2626">*</span></label>
+                        <input type="text" class="form-control" name="admin_user" required
+                               value="<?= htmlspecialchars($_POST['admin_user'] ?? '') ?>"
+                               placeholder="admin">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Пароль <span style="color:#dc2626">*</span></label>
+                        <input type="password" class="form-control" name="admin_pass" required
+                               placeholder="••••••••">
+                    </div>
+                </div>
+            </div>
+
+            <?php if ($error): ?>
+            <div class="alert alert-danger">
+                <?= htmlspecialchars($error) ?>
+                <?php if ($manualConfig): ?>
+                <pre class="manual-config"><?= $manualConfig ?></pre>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
+
+            <button type="submit" class="btn-submit">Установить Adminis</button>
+
+        </form>
+
+        <?php endif; ?>
+
+    </div>
+</div>
 </body>
 </html>
