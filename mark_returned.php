@@ -11,5 +11,5 @@ $id = (int)$_GET['id'];
 $stmt = $pdo->prepare("UPDATE laptops SET status = 'сдан', end_date = CURDATE() WHERE id = ?");
 $stmt->execute([$id]);
 
-header('Location: laptops/');
+header('Location: laptops/index.php');
 exit;

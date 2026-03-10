@@ -11,6 +11,7 @@ $typeToFolder = [
     'Свитч' => 'switch',
     'МФУ' => 'mfu',
     'Интерактивная доска' => 'board',
+    'Ноутбук' => 'laptop',
     'Прочее' => 'other',
 ];
 $folder = $typeToFolder[$type] ?? 'other';

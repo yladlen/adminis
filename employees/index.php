@@ -3,32 +3,40 @@ require_once '../includes/db.php';
 require_once '../includes/auth.php';
 require_once '../includes/navbar.php';
 require_once '../includes/top_navbar.php';
-require_once 'room_model.php';
 
 $filters = [
-    'room_id'     => $_GET['room_id'] ?? null,
-    'device_type' => $_GET['device_type'] ?? null,
-    'status'      => $_GET['status'] ?? null,
-    'search'      => trim($_GET['search'] ?? ''),
+    'room_id'  => $_GET['room_id'] ?? null,
+    'position' => $_GET['position'] ?? null,
+    'search'   => trim($_GET['search'] ?? ''),
 ];
 
-$rooms_all = getRooms($pdo, $filters);
+$params = [];
+$conditions = [];
 
+if (!empty($filters['room_id']))  { $conditions[] = 't.room_id = ?';  $params[] = (int)$filters['room_id']; }
+if (!empty($filters['position'])) { $conditions[] = 't.position = ?'; $params[] = $filters['position']; }
 if (!empty($filters['search'])) {
-    $q = mb_strtolower($filters['search']);
-    $rooms_all = array_values(array_filter($rooms_all, fn($r) =>
-        str_contains(mb_strtolower($r['name'] ?? ''), $q) ||
-        str_contains(mb_strtolower($r['description'] ?? ''), $q)
-    ));
+    $conditions[] = '(t.full_name LIKE ? OR t.mobile_phone LIKE ? OR t.internal_phone LIKE ? OR t.email LIKE ?)';
+    $s = '%' . $filters['search'] . '%';
+    array_push($params, $s, $s, $s, $s);
 }
 
-$roomList = $pdo->query("SELECT id, name FROM rooms ORDER BY name")->fetchAll();
+$sql  = "SELECT t.*, r.name AS room_name FROM employees t LEFT JOIN rooms r ON t.room_id = r.id";
+if ($conditions) $sql .= " WHERE " . implode(' AND ', $conditions);
+$sql .= " ORDER BY t.full_name";
+
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+$employees = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$rooms     = $pdo->query("SELECT id, name FROM rooms ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+$positions = $pdo->query("SELECT DISTINCT position FROM employees WHERE position IS NOT NULL AND position != '' ORDER BY position")->fetchAll(PDO::FETCH_COLUMN);
 ?>
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Кабинеты</title>
+    <title>Сотрудники</title>
     <link href="/adminis/includes/style.css" rel="stylesheet">
     <style>
         th.sortable { cursor:pointer; user-select:none; white-space:nowrap; }
@@ -44,51 +52,39 @@ $roomList = $pdo->query("SELECT id, name FROM rooms ORDER BY name")->fetchAll();
     <div class="content-container">
 
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1 class="mb-0" style="text-align:left">Кабинеты</h1>
-            <div class="d-flex gap-2">
-                <form method="POST" action="export_rooms.php">
-                    <input type="hidden" name="room_id"     value="<?= htmlspecialchars($_GET['room_id'] ?? '') ?>">
-                    <input type="hidden" name="device_type" value="<?= htmlspecialchars($_GET['device_type'] ?? '') ?>">
-                    <input type="hidden" name="status"      value="<?= htmlspecialchars($_GET['status'] ?? '') ?>">
-                    <button type="submit" class="btn btn-outline-success">⬇️ Экспорт CSV</button>
-                </form>
-                <a href="add_room.php" class="btn btn-outline-success">➕ Добавить кабинет</a>
-            </div>
+            <h1 class="mb-0" style="text-align:left">Сотрудники</h1>
+            <a href="add.php" class="btn btn-outline-success">➕ Добавить сотрудника</a>
         </div>
 
         <div class="filters-container">
             <div class="d-flex gap-2" style="flex-wrap:wrap;align-items:center">
-                <input type="text" id="search-input" name="search" class="form-control" style="flex:2;min-width:200px"
+                <input type="text" id="search-input" name="search" class="form-control" style="flex:1;min-width:180px"
                        value="<?= htmlspecialchars($filters['search']) ?>"
-                       placeholder="Поиск по названию кабинета...">
+                       placeholder="Поиск по ФИО, телефону, email...">
                 <select name="room_id" class="form-select" style="flex:1;min-width:160px">
                     <option value="">Все кабинеты</option>
-                    <?php foreach ($roomList as $r): ?>
-                        <option value="<?= $r['id'] ?>" <?= ($_GET['room_id'] ?? '') == $r['id'] ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($r['name']) ?>
+                    <?php foreach ($rooms as $room): ?>
+                        <option value="<?= $room['id'] ?>" <?= ($filters['room_id']??'')==$room['id']?'selected':'' ?>>
+                            <?= htmlspecialchars($room['name']) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
-                <select name="device_type" class="form-select" style="flex:1;min-width:160px">
-                    <option value="">Все типы устройств</option>
-                    <?php foreach (['ПК','Сервер','Принтер','Маршрутизатор','Свитч','МФУ','Интерактивная доска','Прочее'] as $t): ?>
-                        <option <?= ($_GET['device_type'] ?? '') == $t ? 'selected' : '' ?>><?= $t ?></option>
+                <select name="position" class="form-select" style="flex:1;min-width:160px">
+                    <option value="">Все должности</option>
+                    <?php foreach ($positions as $pos): ?>
+                        <option value="<?= htmlspecialchars($pos) ?>" <?= ($filters['position']??'')==$pos?'selected':'' ?>>
+                            <?= htmlspecialchars($pos) ?>
+                        </option>
                     <?php endforeach; ?>
                 </select>
-                <select name="status" class="form-select" style="flex:1;min-width:160px">
-                    <option value="">Все статусы</option>
-                    <?php foreach (['В работе','На ремонте','Списан','На хранении','Числится за кабинетом'] as $s): ?>
-                        <option <?= ($_GET['status'] ?? '') == $s ? 'selected' : '' ?>><?= $s ?></option>
-                    <?php endforeach; ?>
-                </select>
-                <?php if (!empty($_GET['room_id']) || !empty($_GET['device_type']) || !empty($_GET['status']) || !empty($filters['search'])): ?>
+                <?php if (!empty($filters['room_id'])||!empty($filters['position'])||!empty($filters['search'])): ?>
                     <a href="index.php" class="btn btn-outline-danger" style="white-space:nowrap">✕ Сбросить</a>
                 <?php endif; ?>
             </div>
         </div>
 
         <div class="d-flex justify-content-between align-items-center mb-3" style="font-size:13px;color:#6b7499">
-            <span id="count-label">Всего: <?= count($rooms_all) ?> кабинетов</span>
+            <span id="count-label">Всего: <?= count($employees) ?> сотрудников</span>
             <div class="d-flex align-items-center gap-2">
                 <span>Записей на странице:</span>
                 <select id="per-page-sel" class="form-select" style="width:80px;padding:4px 8px">
@@ -99,26 +95,32 @@ $roomList = $pdo->query("SELECT id, name FROM rooms ORDER BY name")->fetchAll();
             </div>
         </div>
 
-        <?php if (empty($rooms_all)): ?>
-            <p class="p-center">Кабинеты не найдены.</p>
+        <?php if (empty($employees)): ?>
+            <p class="p-center">Сотрудники не найдены.</p>
         <?php else: ?>
             <div class="table-responsive">
                 <table id="main-table">
                     <thead>
                         <tr>
-                            <th class="sortable" data-col="0">Кабинет<i class="sort-icon"></i></th>
-                            <th style="width:50%">Описание</th>
-                            <th class="sortable text-center" data-col="2">Устройств<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="0">ФИО<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="1">Должность<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="2">Кабинет<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="3">Внутренний тел.<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="4">Мобильный тел.<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="5">Email<i class="sort-icon"></i></th>
+                            <th>Комментарий</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($rooms_all as $room): ?>
-                            <tr onclick="location.href='room.php?id=<?= $room['id'] ?>'" style="cursor:pointer">
-                                <td><?= htmlspecialchars($room['name']) ?></td>
-                                <td><?= nl2br(htmlspecialchars($room['description'])) ?></td>
-                                <td class="text-center" data-sort="<?= str_pad((int)$room['device_count'], 6, '0', STR_PAD_LEFT) ?>">
-                                    <?= $room['device_count'] ?>
-                                </td>
+                        <?php foreach ($employees as $emp): ?>
+                            <tr onclick="location.href='edit.php?id=<?= $emp['id'] ?>'" style="cursor:pointer">
+                                <td><strong><?= htmlspecialchars($emp['full_name']) ?></strong></td>
+                                <td><?= htmlspecialchars($emp['position'] ?? '—') ?></td>
+                                <td><?= htmlspecialchars($emp['room_name'] ?? '—') ?></td>
+                                <td><?= htmlspecialchars($emp['internal_phone'] ?? '—') ?></td>
+                                <td><?= htmlspecialchars($emp['mobile_phone'] ?? '—') ?></td>
+                                <td><?= htmlspecialchars($emp['email'] ?? '—') ?></td>
+                                <td><?= nl2br(htmlspecialchars($emp['comment'] ?? '')) ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -126,7 +128,6 @@ $roomList = $pdo->query("SELECT id, name FROM rooms ORDER BY name")->fetchAll();
             </div>
             <div id="pagination" class="pagination"></div>
         <?php endif; ?>
-
     </div>
 </div>
 <script>
