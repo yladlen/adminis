@@ -29,9 +29,24 @@ try {
     die('Ошибка подключения к БД: ' . htmlspecialchars($e->getMessage()));
 }
 
-$fromVersion = $_GET['from'] ?? '1.0.0';
-$toVersion   = $_GET['to']   ?? APP_VERSION;
-$backUrl     = $_GET['back']  ?? '/../index.php';
+$toVersion = $_GET['to']  ?? APP_VERSION;
+$backUrl   = $_GET['back'] ?? '/../index.php';
+
+// Если таблицы settings нет — создаём её и считаем версию БД 1.0.0
+$settingsExists = $pdo->query("SELECT COUNT(*) FROM information_schema.tables
+    WHERE table_schema = DATABASE() AND table_name = 'settings'")->fetchColumn();
+
+if (!$settingsExists) {
+    $pdo->exec("CREATE TABLE `settings` (
+        `key`   VARCHAR(64)  NOT NULL PRIMARY KEY,
+        `value` VARCHAR(255) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    $pdo->exec("INSERT INTO `settings` (`key`, `value`) VALUES ('db_version', '1.0.0')");
+}
+
+$fromVersion = $_GET['from']
+    ?? $pdo->query("SELECT `value` FROM `settings` WHERE `key` = 'db_version'")->fetchColumn()
+    ?: '1.0.0';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ PHP-ШАГОВ МИГРАЦИЙ
