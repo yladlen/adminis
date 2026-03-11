@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $adminUser = trim($_POST['admin_user'] ?? '');
     $adminPass = trim($_POST['admin_pass'] ?? '');
     $siteTitle = trim($_POST['site_title'] ?? 'Adminis');
-    $appVersion = '2.0.0';
+    $appVersion = require 'version.php';
 
     if (empty($dbname) || empty($adminUser) || empty($adminPass)) {
         $error = "Заполните все обязательные поля.";
