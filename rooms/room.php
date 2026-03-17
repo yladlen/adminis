@@ -4,7 +4,6 @@ require_once '../includes/auth.php';
 require_once '../includes/navbar.php';
 require_once '../includes/top_navbar.php';
 require_once 'room_model.php';
-require_once '../includes/functions.php';
 
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) die("Некорректный ID кабинета.");
 
@@ -40,6 +39,16 @@ $statusColors = [
     'На хранении'           => ['bg'=>'#eff6ff','color'=>'#2563eb','border'=>'#bfdbfe'],
     'Числится за кабинетом' => ['bg'=>'#fdf4ff','color'=>'#9333ea','border'=>'#e9d5ff'],
 ];
+$typeEditUrl = [
+    'ПК'                 => '/adminis/computers/edit.php',
+    'Сервер'             => '/adminis/servers/edit.php',
+    'Ноутбук'            => '/adminis/notebooks/edit.php',
+    'Принтер'            => '/adminis/printers/edit.php',
+    'ИБП'                => '/adminis/ups/edit.php',
+    'Коммутатор'         => '/adminis/switch/edit.php',
+    'Интерактивная доска'=> '/adminis/switch/edit.php',
+];
+
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -71,7 +80,6 @@ $statusColors = [
             <div class="d-flex gap-2">
                 <a href="index.php" class="btn btn-outline-success btn-sm">← Назад</a>
                 <a href="edit_room.php?id=<?= $room_id ?>" class="btn btn-outline-success btn-sm">✏️ Редактировать</a>
-                <a href="add_device.php?room_id=<?= $room_id ?>" class="btn btn-outline-success btn-sm">➕ Добавить устройство</a>
             </div>
         </div>
 
@@ -131,7 +139,11 @@ $statusColors = [
                         <?php foreach ($devices_filtered as $device):
                             $sc = $statusColors[$device['status']] ?? ['bg'=>'#f0f2f5','color'=>'#6b7499','border'=>'#e5e7ef'];
                         ?>
-                            <tr onclick="location.href='edit_device.php?id=<?= $device['id'] ?>'" style="cursor:pointer">
+                            <?php
+                                $editUrl = ($typeEditUrl[$device['type']] ?? '/adminis/rooms/edit_device.php')
+                                    . '?id=' . $device['id'] . '&from=room';
+                            ?>
+                            <tr onclick="location.href='<?= $editUrl ?>'" style="cursor:pointer">
                                 <td class="text-center" data-sort="<?= htmlspecialchars($device['status']) ?>" style="white-space:nowrap">
                                     <span class="status-pill"
                                           style="background:<?= $sc['bg'] ?>;color:<?= $sc['color'] ?>;border-color:<?= $sc['border'] ?>">
@@ -140,11 +152,10 @@ $statusColors = [
                                 </td>
                                 <td>
                                     <?php
-                                        $folder = mapTypeToFolder($device['type']);
-                                        $icon   = htmlspecialchars($device['icon']);
-                                        $path   = "../assets/icons/{$folder}/{$icon}";
-                                        if ($icon && file_exists($path))
-                                            echo "<img src=\"$path\" style=\"width:22px;height:22px;vertical-align:middle;margin-right:6px\">";
+                                        $icon = htmlspecialchars($device['icon'] ?? '');
+                                        $iconPath = "../assets/icons/{$icon}";
+                                        if ($icon && file_exists($iconPath))
+                                            echo "<img src=\"/adminis/assets/icons/{$icon}\" style=\"width:22px;height:22px;vertical-align:middle;margin-right:6px\">";
                                         echo htmlspecialchars($device['name']);
                                     ?>
                                 </td>

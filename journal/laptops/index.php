@@ -78,7 +78,7 @@ $stat_free = max(0, $total_notebooks - $stat_taken);
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div>
                 <div style="font-size:12px;color:#9ca3c4;margin-bottom:4px">
-                    <a href="../journal/" style="color:#9ca3c4;text-decoration:none">← Журналы</a>
+                    <a href="../" style="color:#9ca3c4;text-decoration:none">← Журналы</a>
                 </div>
                 <h1 class="mb-0" style="text-align:left">Журнал выдачи ноутбуков</h1>
             </div>

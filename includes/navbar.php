@@ -23,9 +23,6 @@ $journalActive = str_starts_with($current, '/adminis/journal') ? 'active' : '';
     <a class="nav-link <?= is_active_link($current, '/adminis/computers') ?>" href="/adminis/computers/">
       <span class="nav-icon">🖥</span> Компьютеры
     </a>
-    <a class="nav-link <?= is_active_link($current, '/adminis/servers') ?>"   href="/adminis/servers/">
-      <span class="nav-icon">🗄</span> Серверы
-    </a>
     <a class="nav-link <?= is_active_link($current, '/adminis/notebooks') ?>" href="/adminis/notebooks/">
       <span class="nav-icon">💻</span> Ноутбуки
     </a>
@@ -34,6 +31,12 @@ $journalActive = str_starts_with($current, '/adminis/journal') ? 'active' : '';
     </a>
     <a class="nav-link <?= is_active_link($current, '/adminis/ups') ?>"       href="/adminis/ups/">
       <span class="nav-icon">🔋</span> ИБП
+    </a>
+    <a class="nav-link <?= is_active_link($current, '/adminis/servers') ?>"   href="/adminis/servers/">
+      <span class="nav-icon">🗄</span> Серверы
+    </a>
+    <a class="nav-link <?= is_active_link($current, '/adminis/switch') ?>"    href="/adminis/switch/">
+      <span class="nav-icon">🔀</span> Коммутация
     </a>
     <a class="nav-link <?= is_active_link($current, '/adminis/employees') ?>" href="/adminis/employees/">
       <span class="nav-icon">👥</span> Сотрудники

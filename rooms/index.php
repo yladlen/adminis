@@ -37,6 +37,9 @@ $roomList = $pdo->query("SELECT id, name FROM rooms ORDER BY name")->fetchAll();
         th.sortable.asc  .sort-icon::after { content:'↑'; opacity:1; }
         th.sortable.desc .sort-icon::after { content:'↓'; opacity:1; }
         th.sortable:not(.asc):not(.desc) .sort-icon::after { content:'↕'; }
+        #main-table { table-layout:fixed; width:100%; }
+        #main-table td:nth-child(1) { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        #main-table td:nth-child(3) { white-space:nowrap; }
     </style>
 </head>
 <body>
@@ -102,19 +105,19 @@ $roomList = $pdo->query("SELECT id, name FROM rooms ORDER BY name")->fetchAll();
         <?php if (empty($rooms_all)): ?>
             <p class="p-center">Кабинеты не найдены.</p>
         <?php else: ?>
-            <div class="table-responsive">
+            <div>
                 <table id="main-table">
                     <thead>
                         <tr>
-                            <th class="sortable" data-col="0">Кабинет<i class="sort-icon"></i></th>
-                            <th style="width:50%">Описание</th>
-                            <th class="sortable text-center" data-col="2">Устройств<i class="sort-icon"></i></th>
+                            <th class="sortable text-center" data-col="0" style="width:120px">Кабинет<i class="sort-icon"></i></th>
+                            <th>Описание</th>
+                            <th class="sortable text-center" data-col="2" style="width:120px">Устройств<i class="sort-icon"></i></th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($rooms_all as $room): ?>
                             <tr onclick="location.href='room.php?id=<?= $room['id'] ?>'" style="cursor:pointer">
-                                <td><?= htmlspecialchars($room['name']) ?></td>
+                                <td class="text-center"><?= htmlspecialchars($room['name']) ?></td>
                                 <td><?= nl2br(htmlspecialchars($room['description'])) ?></td>
                                 <td class="text-center" data-sort="<?= str_pad((int)$room['device_count'], 6, '0', STR_PAD_LEFT) ?>">
                                     <?= $room['device_count'] ?>

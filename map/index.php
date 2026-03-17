@@ -585,7 +585,19 @@ canvas.addEventListener('click',e=>{
         const rect=canvas.getBoundingClientRect();
         const w=screenToWorld(e.clientX-rect.left,e.clientY-rect.top);
         const hit=hitNode(w.x,w.y);
-        if(hit) window.location.href='../rooms/edit_device.php?id='+hit.key+'&from=map';
+        if(hit) {
+            const typeRoutes = {
+                'ПК':                  '/adminis/computers/edit.php',
+                'Сервер':              '/adminis/servers/edit.php',
+                'Ноутбук':             '/adminis/notebooks/edit.php',
+                'Принтер':             '/adminis/printers/edit.php',
+                'ИБП':                 '/adminis/ups/edit.php',
+                'Коммутатор':          '/adminis/switch/edit.php',
+                'Интерактивная доска': '/adminis/switch/edit.php',
+            };
+            const url = typeRoutes[hit.type] || '/adminis/switch/edit.php';
+            window.location.href = url + '?id=' + hit.key + '&from=map';
+        }
     }
     lastClick=now;
 });
