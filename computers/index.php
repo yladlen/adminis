@@ -1,8 +1,6 @@
 <?php
 require_once '../includes/db.php';
 require_once '../includes/auth.php';
-require_once '../includes/navbar.php';
-require_once '../includes/top_navbar.php';
 
 $filters = [
     'room_id' => $_GET['room_id'] ?? null,
@@ -23,13 +21,66 @@ if (!empty($filters['search'])) {
 }
 
 $sql  = "SELECT d.*, r.name AS room_name,
+         ch.cpu, ch.ram_gb, ch.hdd_gb, ch.gpu, ch.os,
+         ch.manufacturer, ch.model, ch.serial_number, ch.year_manufactured,
+         ch.commissioned_at, ch.warranty_until, ch.floor,
          (SELECT COUNT(*) FROM computer_issues ci WHERE ci.device_id=d.id AND ci.resolved_at IS NULL) AS open_issues
-         FROM devices d LEFT JOIN rooms r ON r.id = d.room_id";
+         FROM devices d
+         LEFT JOIN rooms r ON r.id = d.room_id
+         LEFT JOIN computer_hardware ch ON ch.device_id = d.id";
 $sql .= " WHERE " . implode(' AND ', $conditions) . " ORDER BY r.name, d.name";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Экспорт CSV — до любого HTML вывода
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="computers_' . date('Y-m-d') . '.csv"');
+    $out = fopen('php://output', 'w');
+    fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF)); // BOM для Excel
+    fputcsv($out, [
+        'Название', 'Кабинет', 'Этаж', 'Статус', 'Инв. номер',
+        'IP', 'MAC',
+        'Производитель', 'Модель', 'Серийный номер', 'Год производства',
+        'Ввод в эксплуатацию', 'Гарантия до',
+        'Процессор', 'ОЗУ (ГБ)', 'Диск', 'Видеокарта', 'ОС',
+        'Комментарий', 'К списанию', 'Дата рекомендации к списанию',
+        'Открытых проблем',
+    ], ';');
+    foreach ($items as $row) {
+        fputcsv($out, [
+            $row['name'],
+            $row['room_name'] ?? '',
+            $row['floor'] ?? '',
+            $row['status'],
+            $row['inventory_number'] ?? '',
+            $row['ip'] ?? '',
+            $row['mac'] ?? '',
+            $row['manufacturer'] ?? '',
+            $row['model'] ?? '',
+            $row['serial_number'] ?? '',
+            $row['year_manufactured'] ?? '',
+            $row['commissioned_at'] ? date('d.m.Y', strtotime($row['commissioned_at'])) : '',
+            $row['warranty_until']  ? date('d.m.Y', strtotime($row['warranty_until']))  : '',
+            $row['cpu'] ?? '',
+            $row['ram_gb'] ?? '',
+            $row['hdd_gb'] ?? '',
+            $row['gpu'] ?? '',
+            $row['os'] ?? '',
+            $row['comment'] ?? '',
+            $row['recommended_for_writeoff'] ? 'Да' : '',
+            $row['writeoff_recommended_at'] ? date('d.m.Y', strtotime($row['writeoff_recommended_at'])) : '',
+            $row['open_issues'] ?? 0,
+        ], ';');
+    }
+    fclose($out);
+    exit;
+}
+
+require_once '../includes/navbar.php';
+require_once '../includes/top_navbar.php';
 
 $rooms    = $pdo->query("SELECT id, name FROM rooms ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
 $statuses = ['В работе','На ремонте','Списан','На хранении','Числится за кабинетом'];
@@ -58,15 +109,16 @@ $statusColors = [
         th.sortable.desc .sort-icon::after { content:'↓'; opacity:1; }
         th.sortable:not(.asc):not(.desc) .sort-icon::after { content:'↕'; }
         #main-table { table-layout:fixed; width:100%; }
-        #main-table th:nth-child(1) { width:130px; }
-        #main-table th:nth-child(2) { width:110px; }
-        #main-table th:nth-child(3) { width:auto; }
-        #main-table th:nth-child(4) { width:130px; }
-        #main-table th:nth-child(5) { width:145px; }
-        #main-table th:nth-child(6) { width:130px; }
-        #main-table th:nth-child(7) { width:180px; }
+        #main-table th:nth-child(1) { width:120px; }
+        #main-table th:nth-child(2) { width:auto; }
+        #main-table th:nth-child(3) { width:100px; }
+        #main-table th:nth-child(4) { width:100px; }
+        #main-table th:nth-child(5) { width:120px; }
+        #main-table th:nth-child(6) { width:120px; }
+        #main-table th:nth-child(7) { width:130px; }
+        #main-table th:nth-child(8) { width:180px; }
         #main-table td { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        #main-table td:nth-child(7) { white-space:normal; }
+        #main-table td:nth-child(8) { white-space:normal; }
     </style>
 </head>
 <body>
@@ -75,7 +127,10 @@ $statusColors = [
 
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1 class="mb-0" style="text-align:left">Компьютеры</h1>
-            <a href="../rooms/add_device.php?from=computers" class="btn btn-outline-success">➕ Добавить компьютер</a>
+            <div class="d-flex gap-2">
+                <a href="?<?= http_build_query(array_filter(array_merge($filters, ['export'=>'csv']))) ?>" class="btn btn-outline-success">⬇ CSV</a>
+                <a href="add.php" class="btn btn-outline-success">➕ Добавить компьютер</a>
+            </div>
         </div>
 
         <div class="filters-container">
@@ -116,18 +171,19 @@ $statusColors = [
         </div>
 
         <?php if (empty($items)): ?>
-            <p class="p-center">Компьютеры не найдены.</p>
+            <p class="p-center">Компьютер не найдены.</p>
         <?php else: ?>
             <div class="table-responsive">
                 <table id="main-table">
                     <thead>
                         <tr>
                             <th class="sortable text-center" data-col="0">Статус<i class="sort-icon"></i></th>
-                            <th class="sortable" data-col="1">Кабинет<i class="sort-icon"></i></th>
-                            <th class="sortable" data-col="2">Название<i class="sort-icon"></i></th>
-                            <th class="sortable" data-col="3">IP<i class="sort-icon"></i></th>
-                            <th class="sortable" data-col="4">MAC<i class="sort-icon"></i></th>
-                            <th class="sortable" data-col="5">Инв. номер<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="1">Название<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="2">Кабинет<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="3">Этаж<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="4">IP<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="5">MAC<i class="sort-icon"></i></th>
+                            <th class="sortable" data-col="6">Инв. номер<i class="sort-icon"></i></th>
                             <th>Комментарий</th>
                         </tr>
                     </thead>
@@ -135,7 +191,7 @@ $statusColors = [
                         <?php foreach ($items as $item):
                             $sc = $statusColors[$item['status']] ?? ['bg'=>'#f0f2f5','color'=>'#6b7499','border'=>'#e5e7ef'];
                         ?>
-                            <tr onclick="location.href='../rooms/edit_device.php?id=<?= $item['id'] ?>&from=computers'" style="cursor:pointer">
+                            <tr onclick="location.href='edit.php?id=<?= $item['id'] ?>'" style="cursor:pointer">
                                 <td class="text-center" data-sort="<?= htmlspecialchars($item['status']) ?>" style="white-space:nowrap">
                                     <span class="status-pill"
                                           style="background:<?= $sc['bg'] ?>;color:<?= $sc['color'] ?>;border-color:<?= $sc['border'] ?>">
@@ -145,8 +201,21 @@ $statusColors = [
                                         <br><span class="issue-dot">⚠ <?= $item['open_issues'] ?></span>
                                     <?php endif; ?>
                                 </td>
+                                <td style="white-space:nowrap">
+                                    <?php
+                                        $iconFile = $item['icon'] ?? '';
+                                        $iconPath = __DIR__ . "/../assets/icons/{$iconFile}";
+                                        if ($iconFile && file_exists($iconPath)):
+                                    ?>
+                                        <img src="/adminis/assets/icons/<?= htmlspecialchars($iconFile) ?>"
+                                             style="width:20px;height:20px;object-fit:contain;vertical-align:middle;margin-right:6px">
+                                    <?php else: ?>
+                                        <span style="display:inline-block;width:26px"></span>
+                                    <?php endif; ?>
+                                    <?= htmlspecialchars($item['name']) ?>
+                                </td>
                                 <td><?= htmlspecialchars($item['room_name'] ?? '—') ?></td>
-                                <td><?= htmlspecialchars($item['name']) ?></td>
+                                <td><?= htmlspecialchars($item['floor'] ?? '—') ?></td>
                                 <td><?= htmlspecialchars($item['ip']) ?></td>
                                 <td><?= htmlspecialchars($item['mac']) ?></td>
                                 <td><?= htmlspecialchars($item['inventory_number']) ?></td>
@@ -166,7 +235,7 @@ $statusColors = [
     const table=document.getElementById('main-table'); if(!table)return;
     const tbody=table.querySelector('tbody'),headers=table.querySelectorAll('th.sortable');
     const perSel=document.getElementById('per-page-sel'),pgDiv=document.getElementById('pagination'),countLbl=document.getElementById('count-label');
-    let sortCol=2,sortDir='asc',perPage=parseInt(perSel?.value||25),curPage=1;
+    let sortCol=1,sortDir='asc',perPage=parseInt(perSel?.value||25),curPage=1;
     const allRows=Array.from(tbody.querySelectorAll('tr'));
     function getCellText(row,col){const td=row.cells[col];return(td?.dataset.sort??td?.textContent??'').trim().toLowerCase();}
     function sortRows(){allRows.sort((a,b)=>{const va=getCellText(a,sortCol),vb=getCellText(b,sortCol);return sortDir==='asc'?va.localeCompare(vb,'ru'):vb.localeCompare(va,'ru');});headers.forEach(h=>{h.classList.remove('asc','desc');if(parseInt(h.dataset.col)===sortCol)h.classList.add(sortDir);});}

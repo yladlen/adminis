@@ -1,31 +1,23 @@
 <?php
-$type = $_GET['type'] ?? '';
-$type = preg_replace('/[^а-яА-Яa-zA-Z0-9 _-]/u', '', $type);
+/**
+ * Отдаёт список иконок из /assets/icons/ как JSON-массив имён файлов.
+ * Используется в edit.php для пикера иконок.
+ */
+require_once __DIR__ . '/includes/auth.php';
 
-// Преобразуем тип в имя папки
-$typeToFolder = [
-    'ПК' => 'pc',
-    'Сервер' => 'server',
-    'Принтер' => 'printer',
-    'Маршрутизатор' => 'router',
-    'Свитч' => 'switch',
-    'МФУ' => 'mfu',
-    'Интерактивная доска' => 'board',
-    'Ноутбук' => 'laptop',
-    'Прочее' => 'other',
-];
-$folder = $typeToFolder[$type] ?? 'other';
-$dir = "assets/icons/$folder";
+$dir = __DIR__ . '/assets/icons/';
+$files = [];
 
-if (!is_dir($dir)) {
-    echo "<p>Нет иконок для выбранного типа.</p>";
-    exit;
+if (is_dir($dir)) {
+    foreach (scandir($dir) as $f) {
+        if ($f === '.' || $f === '..') continue;
+        $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
+        if (in_array($ext, ['png','jpg','jpeg','gif','svg','webp'])) {
+            $files[] = $f;
+        }
+    }
+    sort($files);
 }
 
-$files = glob("$dir/*.png");
-
-foreach ($files as $file) {
-    $name = basename($file);
-    $base_path = '/adminis'; // если нужно
-    echo "<img src=\"$base_path/assets/icons/$folder/$name\" class=\"icon-option\" data-filename=\"$name\" style=\"width:64px; height:64px; margin:5px; cursor:pointer;\">";
-}
+header('Content-Type: application/json');
+echo json_encode($files);

@@ -30,7 +30,7 @@ try {
 }
 
 $toVersion = $_GET['to']  ?? APP_VERSION;
-$backUrl   = $_GET['back'] ?? '/../index.php';
+$backUrl   = $_GET['back'] ?? '../index.php';
 
 // Если таблицы settings нет — создаём её и считаем версию БД 1.0.0
 $settingsExists = $pdo->query("SELECT COUNT(*) FROM information_schema.tables
@@ -382,13 +382,312 @@ $migrations = [
         ],
     ],
 
-    // ── ШАБЛОН для следующего обновления ─────────────────────────────────
-    // '2.1.0' => [
-    //     'title' => 'Описание что изменилось',
-    //     'steps' => [
-    //         'Название шага' => "SQL запрос",
-    //     ],
-    // ],
+    // ── v2.0.0 → v2.1.0 ──────────────────────────────────────────────────
+    // Расширение computer_hardware: паспортные данные устройства
+    '2.1.0' => [
+        'title' => 'Паспортные данные компьютеров — производитель, модель, гарантия',
+        'steps' => [
+            'Добавление колонки manufacturer' =>
+                "ALTER TABLE `computer_hardware` ADD COLUMN IF NOT EXISTS `manufacturer` VARCHAR(255) DEFAULT NULL COMMENT 'Производитель' AFTER `os`",
+
+            'Добавление колонки model' =>
+                "ALTER TABLE `computer_hardware` ADD COLUMN IF NOT EXISTS `model` VARCHAR(255) DEFAULT NULL COMMENT 'Модель' AFTER `manufacturer`",
+
+            'Добавление колонки serial_number' =>
+                "ALTER TABLE `computer_hardware` ADD COLUMN IF NOT EXISTS `serial_number` VARCHAR(255) DEFAULT NULL COMMENT 'Серийный номер' AFTER `model`",
+
+            'Добавление колонки year_manufactured' =>
+                "ALTER TABLE `computer_hardware` ADD COLUMN IF NOT EXISTS `year_manufactured` SMALLINT UNSIGNED DEFAULT NULL COMMENT 'Год производства' AFTER `serial_number`",
+
+            'Добавление колонки commissioned_at' =>
+                "ALTER TABLE `computer_hardware` ADD COLUMN IF NOT EXISTS `commissioned_at` DATE DEFAULT NULL COMMENT 'Дата ввода в эксплуатацию' AFTER `year_manufactured`",
+
+            'Добавление колонки warranty_until' =>
+                "ALTER TABLE `computer_hardware` ADD COLUMN IF NOT EXISTS `warranty_until` DATE DEFAULT NULL COMMENT 'Гарантия до' AFTER `commissioned_at`",
+
+            'Добавление колонки floor' =>
+                "ALTER TABLE `computer_hardware` ADD COLUMN IF NOT EXISTS `floor` VARCHAR(32) DEFAULT NULL COMMENT 'Этаж' AFTER `warranty_until`",
+
+            'Создание таблицы server_hardware' =>
+                "CREATE TABLE IF NOT EXISTS `server_hardware` (
+                    `device_id`          INT           PRIMARY KEY,
+                    `cpu`                VARCHAR(255)  DEFAULT NULL,
+                    `ram_gb`             VARCHAR(64)   DEFAULT NULL,
+                    `hdd_gb`             VARCHAR(64)   DEFAULT NULL,
+                    `os`                 VARCHAR(255)  DEFAULT NULL COMMENT 'ОС / Гипервизор',
+                    `form_factor`        VARCHAR(32)   DEFAULT NULL COMMENT 'Форм-фактор (1U/2U/Tower...)',
+                    `manufacturer`       VARCHAR(255)  DEFAULT NULL,
+                    `model`              VARCHAR(255)  DEFAULT NULL,
+                    `serial_number`      VARCHAR(255)  DEFAULT NULL,
+                    `year_manufactured`  SMALLINT UNSIGNED DEFAULT NULL,
+                    `commissioned_at`    DATE          DEFAULT NULL,
+                    `warranty_until`     DATE          DEFAULT NULL,
+                    `floor`              VARCHAR(32)   DEFAULT NULL,
+                    `updated_at`         TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    CONSTRAINT `server_hardware_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Создание таблицы server_history' =>
+                "CREATE TABLE IF NOT EXISTS `server_history` (
+                    `id`         INT AUTO_INCREMENT PRIMARY KEY,
+                    `device_id`  INT         NOT NULL,
+                    `action`     VARCHAR(64) NOT NULL,
+                    `field_name` VARCHAR(64) DEFAULT NULL,
+                    `old_value`  TEXT        DEFAULT NULL,
+                    `new_value`  TEXT        DEFAULT NULL,
+                    `note`       TEXT        DEFAULT NULL,
+                    `created_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    KEY `device_id` (`device_id`),
+                    CONSTRAINT `server_history_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Создание таблицы server_issues' =>
+                "CREATE TABLE IF NOT EXISTS `server_issues` (
+                    `id`          INT AUTO_INCREMENT PRIMARY KEY,
+                    `device_id`   INT  NOT NULL,
+                    `component`   VARCHAR(64) DEFAULT NULL,
+                    `description` TEXT NOT NULL,
+                    `reported_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    `resolved_at` TIMESTAMP   NULL     DEFAULT NULL,
+                    `resolution`  TEXT        DEFAULT NULL,
+                    KEY `device_id` (`device_id`),
+                    CONSTRAINT `server_issues_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Удаление устаревшей таблицы server_stats' =>
+                "DROP TABLE IF EXISTS `server_stats`",
+
+            'Удаление устаревшей таблицы servers' =>
+                "DROP TABLE IF EXISTS `servers`",
+
+            'Создание таблицы notebook_hardware' =>
+                "CREATE TABLE IF NOT EXISTS `notebook_hardware` (
+                    `device_id`          INT           PRIMARY KEY,
+                    `cpu`                VARCHAR(255)  DEFAULT NULL,
+                    `ram_gb`             VARCHAR(64)   DEFAULT NULL,
+                    `hdd_gb`             VARCHAR(64)   DEFAULT NULL,
+                    `gpu`                VARCHAR(255)  DEFAULT NULL,
+                    `os`                 VARCHAR(255)  DEFAULT NULL,
+                    `manufacturer`       VARCHAR(255)  DEFAULT NULL,
+                    `model`              VARCHAR(255)  DEFAULT NULL,
+                    `serial_number`      VARCHAR(255)  DEFAULT NULL,
+                    `year_manufactured`  SMALLINT UNSIGNED DEFAULT NULL,
+                    `commissioned_at`    DATE          DEFAULT NULL,
+                    `warranty_until`     DATE          DEFAULT NULL,
+                    `floor`              VARCHAR(32)   DEFAULT NULL,
+                    `updated_at`         TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    CONSTRAINT `notebook_hardware_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Создание таблицы notebook_history' =>
+                "CREATE TABLE IF NOT EXISTS `notebook_history` (
+                    `id`         INT AUTO_INCREMENT PRIMARY KEY,
+                    `device_id`  INT         NOT NULL,
+                    `action`     VARCHAR(64) NOT NULL,
+                    `field_name` VARCHAR(64) DEFAULT NULL,
+                    `old_value`  TEXT        DEFAULT NULL,
+                    `new_value`  TEXT        DEFAULT NULL,
+                    `note`       TEXT        DEFAULT NULL,
+                    `created_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    KEY `device_id` (`device_id`),
+                    CONSTRAINT `notebook_history_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Создание таблицы notebook_issues' =>
+                "CREATE TABLE IF NOT EXISTS `notebook_issues` (
+                    `id`          INT AUTO_INCREMENT PRIMARY KEY,
+                    `device_id`   INT  NOT NULL,
+                    `component`   VARCHAR(64) DEFAULT NULL,
+                    `description` TEXT NOT NULL,
+                    `reported_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    `resolved_at` TIMESTAMP   NULL     DEFAULT NULL,
+                    `resolution`  TEXT        DEFAULT NULL,
+                    KEY `device_id` (`device_id`),
+                    CONSTRAINT `notebook_issues_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Создание таблицы printer_passport' =>
+                "CREATE TABLE IF NOT EXISTS `printer_passport` (
+                    `device_id`          INT           PRIMARY KEY,
+                    `manufacturer`       VARCHAR(255)  DEFAULT NULL,
+                    `model`              VARCHAR(255)  DEFAULT NULL,
+                    `serial_number`      VARCHAR(255)  DEFAULT NULL,
+                    `year_manufactured`  SMALLINT UNSIGNED DEFAULT NULL,
+                    `commissioned_at`    DATE          DEFAULT NULL,
+                    `warranty_until`     DATE          DEFAULT NULL,
+                    `connection_type`    VARCHAR(32)   DEFAULT NULL COMMENT 'USB/LAN/Wi-Fi',
+                    `network_support`    TINYINT(1)    NOT NULL DEFAULT 0,
+                    `floor`              VARCHAR(32)   DEFAULT NULL COMMENT 'Этаж',
+                    `updated_at`         TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    CONSTRAINT `printer_passport_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Создание таблицы printer_history' =>
+                "CREATE TABLE IF NOT EXISTS `printer_history` (
+                    `id`         INT AUTO_INCREMENT PRIMARY KEY,
+                    `device_id`  INT         NOT NULL,
+                    `action`     VARCHAR(64) NOT NULL,
+                    `field_name` VARCHAR(64) DEFAULT NULL,
+                    `old_value`  TEXT        DEFAULT NULL,
+                    `new_value`  TEXT        DEFAULT NULL,
+                    `note`       TEXT        DEFAULT NULL,
+                    `created_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    KEY `device_id` (`device_id`),
+                    CONSTRAINT `printer_history_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Создание таблицы printer_issues' =>
+                "CREATE TABLE IF NOT EXISTS `printer_issues` (
+                    `id`          INT AUTO_INCREMENT PRIMARY KEY,
+                    `device_id`   INT  NOT NULL,
+                    `component`   VARCHAR(64) DEFAULT NULL COMMENT 'fuser/rollers/film/cartridge/drum/repair_kit/maintenance/other',
+                    `description` TEXT NOT NULL,
+                    `reported_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    `resolved_at` TIMESTAMP   NULL     DEFAULT NULL,
+                    `resolution`  TEXT        DEFAULT NULL,
+                    KEY `device_id` (`device_id`),
+                    CONSTRAINT `printer_issues_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Создание таблицы ups_hardware' =>
+                "CREATE TABLE IF NOT EXISTS `ups_hardware` (
+                    `device_id`          INT           PRIMARY KEY,
+                    `power_va`           VARCHAR(32)   DEFAULT NULL COMMENT 'Мощность в ВА',
+                    `battery_type`       VARCHAR(255)  DEFAULT NULL COMMENT 'Тип батареи',
+                    `battery_replaced`   DATE          DEFAULT NULL COMMENT 'Дата замены батареи',
+                    `manufacturer`       VARCHAR(255)  DEFAULT NULL,
+                    `model`              VARCHAR(255)  DEFAULT NULL,
+                    `serial_number`      VARCHAR(255)  DEFAULT NULL,
+                    `year_manufactured`  SMALLINT UNSIGNED DEFAULT NULL,
+                    `commissioned_at`    DATE          DEFAULT NULL,
+                    `warranty_until`     DATE          DEFAULT NULL,
+                    `floor`              VARCHAR(32)   DEFAULT NULL,
+                    `updated_at`         TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    CONSTRAINT `ups_hardware_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Создание таблицы ups_history' =>
+                "CREATE TABLE IF NOT EXISTS `ups_history` (
+                    `id`         INT AUTO_INCREMENT PRIMARY KEY,
+                    `device_id`  INT         NOT NULL,
+                    `action`     VARCHAR(64) NOT NULL,
+                    `field_name` VARCHAR(64) DEFAULT NULL,
+                    `old_value`  TEXT        DEFAULT NULL,
+                    `new_value`  TEXT        DEFAULT NULL,
+                    `note`       TEXT        DEFAULT NULL,
+                    `created_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    KEY `device_id` (`device_id`),
+                    CONSTRAINT `ups_history_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Создание таблицы ups_issues' =>
+                "CREATE TABLE IF NOT EXISTS `ups_issues` (
+                    `id`          INT AUTO_INCREMENT PRIMARY KEY,
+                    `device_id`   INT  NOT NULL,
+                    `component`   VARCHAR(64) DEFAULT NULL COMMENT 'battery/charging/output/signal/overheating/other',
+                    `description` TEXT NOT NULL,
+                    `reported_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    `resolved_at` TIMESTAMP   NULL     DEFAULT NULL,
+                    `resolution`  TEXT        DEFAULT NULL,
+                    KEY `device_id` (`device_id`),
+                    CONSTRAINT `ups_issues_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            // ── Коммутация ────────────────────────────────────────────────
+
+            'Обновление ENUM devices.type — добавление Коммутатор (временно, со старыми типами)' =>
+                "ALTER TABLE `devices` MODIFY COLUMN `type`
+                 ENUM('ПК','Сервер','Принтер','Маршрутизатор','Свитч','Коммутатор','Интерактивная доска','Ноутбук','ИБП','Прочее')
+                 NOT NULL DEFAULT 'Прочее'",
+
+            'Миграция Свитч/Маршрутизатор → Коммутатор' =>
+                "UPDATE `devices` SET `type` = 'Коммутатор' WHERE `type` IN ('Свитч', 'Маршрутизатор')",
+
+            'Финальное обновление ENUM devices.type — удаление старых типов Свитч/Маршрутизатор' =>
+                "ALTER TABLE `devices` MODIFY COLUMN `type`
+                 ENUM('ПК','Сервер','Принтер','Коммутатор','Интерактивная доска','Ноутбук','ИБП','Прочее')
+                 NOT NULL DEFAULT 'Прочее'",
+
+            'Добавление колонки port_number в switch_links' =>
+                "ALTER TABLE `switch_links`
+                 ADD COLUMN IF NOT EXISTS `port_number` VARCHAR(16) DEFAULT NULL COMMENT 'Номер порта на коммутаторе' AFTER `connected_to_device_id`",
+
+            'Создание таблицы switch_hardware' =>
+                "CREATE TABLE IF NOT EXISTS `switch_hardware` (
+                    `device_id`          INT           PRIMARY KEY,
+                    `device_type`        VARCHAR(64)   DEFAULT NULL COMMENT 'Коммутатор/Маршрутизатор/Точка доступа/...',
+                    `ports`              SMALLINT UNSIGNED DEFAULT NULL COMMENT 'Количество портов',
+                    `port_speed`         VARCHAR(32)   DEFAULT NULL COMMENT 'Скорость портов',
+                    `managed`            TINYINT(1)    NOT NULL DEFAULT 0 COMMENT 'Управляемый',
+                    `manufacturer`       VARCHAR(255)  DEFAULT NULL,
+                    `model`              VARCHAR(255)  DEFAULT NULL,
+                    `serial_number`      VARCHAR(255)  DEFAULT NULL,
+                    `year_manufactured`  SMALLINT UNSIGNED DEFAULT NULL,
+                    `commissioned_at`    DATE          DEFAULT NULL,
+                    `warranty_until`     DATE          DEFAULT NULL,
+                    `floor`              VARCHAR(32)   DEFAULT NULL,
+                    `updated_at`         TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    CONSTRAINT `switch_hardware_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Создание таблицы switch_history' =>
+                "CREATE TABLE IF NOT EXISTS `switch_history` (
+                    `id`         INT AUTO_INCREMENT PRIMARY KEY,
+                    `device_id`  INT         NOT NULL,
+                    `action`     VARCHAR(64) NOT NULL,
+                    `field_name` VARCHAR(64) DEFAULT NULL,
+                    `old_value`  TEXT        DEFAULT NULL,
+                    `new_value`  TEXT        DEFAULT NULL,
+                    `note`       TEXT        DEFAULT NULL,
+                    `created_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    KEY `device_id` (`device_id`),
+                    CONSTRAINT `switch_history_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Создание таблицы switch_issues' =>
+                "CREATE TABLE IF NOT EXISTS `switch_issues` (
+                    `id`          INT AUTO_INCREMENT PRIMARY KEY,
+                    `device_id`   INT  NOT NULL,
+                    `component`   VARCHAR(64) DEFAULT NULL COMMENT 'ports/power/firmware/uplink/other',
+                    `description` TEXT NOT NULL,
+                    `reported_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    `resolved_at` TIMESTAMP   NULL     DEFAULT NULL,
+                    `resolution`  TEXT        DEFAULT NULL,
+                    KEY `device_id` (`device_id`),
+                    CONSTRAINT `switch_issues_ibfk_1` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'Добавление флага рекомендации к списанию в devices' =>
+                "ALTER TABLE `devices`
+                 ADD COLUMN IF NOT EXISTS `recommended_for_writeoff` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Рекомендовано к списанию' AFTER `icon`",
+
+            'Добавление даты рекомендации к списанию в devices' =>
+                "ALTER TABLE `devices`
+                 ADD COLUMN IF NOT EXISTS `writeoff_recommended_at` DATE DEFAULT NULL COMMENT 'Дата рекомендации к списанию' AFTER `recommended_for_writeoff`",
+
+            'Перевод устройств типа Прочее → Коммутатор' =>
+                "UPDATE `devices` SET `type` = 'Коммутатор' WHERE `type` = 'Прочее'",
+
+            'Создание записей switch_hardware для перенесённых устройств' => function($pdo) {
+                // Для всех Коммутаторов у которых нет записи в switch_hardware — создаём с device_type=Прочее
+                $rows = $pdo->query("
+                    SELECT d.id FROM devices d
+                    LEFT JOIN switch_hardware sh ON sh.device_id = d.id
+                    WHERE d.type = 'Коммутатор' AND sh.device_id IS NULL
+                ")->fetchAll(PDO::FETCH_COLUMN);
+                if (!$rows) return 'нет устройств без записи';
+                $ins = $pdo->prepare("INSERT IGNORE INTO switch_hardware (device_id, device_type) VALUES (?, 'Прочее')");
+                foreach ($rows as $id) $ins->execute([$id]);
+                return 'создано записей: ' . count($rows);
+            },
+
+            'Удаление типа Прочее из ENUM devices.type' =>
+                "ALTER TABLE `devices` MODIFY COLUMN `type`
+                 ENUM('ПК','Сервер','Принтер','Коммутатор','Интерактивная доска','Ноутбук','ИБП')
+                 NOT NULL DEFAULT 'Коммутатор'",
+        ],
+    ],
+
 ];
 
 // ════════════════════════════════════════════════════════════════════════════

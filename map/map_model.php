@@ -62,7 +62,7 @@ function getMapData(PDO $pdo): array {
                 'room_name' => $d['room_name'],
                 'hasIssues' => (int)$d['open_issues'] > 0,
                 'group'     => $groupKey,
-                'icon'      => '../assets/icons/' . mapTypeToFolder($d['type']) . '/' . ($d['icon'] ?: 'default.png'),
+                'icon'      => '../assets/icons/' . ($d['icon'] ?: 'default.png'),
             ];
         }
     }
